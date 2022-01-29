@@ -61,18 +61,7 @@ MapLockedCopyInstruction(
     s8 Instruction[4] = { 0 };
     PHYSICAL_ADDRESS PhysicalAddress = { 0 };
     ptr VirtualAddress = NULL;
-
-    if (Length > sizeof(u32)) {
-        RtlCopyMemory(Instruction, Source, sizeof(u32));
-    }
-    else {
-        RtlCopyMemory(Instruction, Source, Length);
-
-        RtlCopyMemory(
-            Instruction + Length,
-            (u8ptr)Destination + Length,
-            sizeof(u32) - Length);
-    }
+    u32 OriginalLength = Length;
 
     PhysicalAddress = MmGetPhysicalAddress(Destination);
 
@@ -82,18 +71,21 @@ MapLockedCopyInstruction(
         MmNonCached);
 
     if (NULL != VirtualAddress) {
-        if (Length > sizeof(u32)) {
-            InterlockedExchange(VirtualAddress, JUMP_SELF);
-
-            RtlCopyMemory(
-                (u8ptr)VirtualAddress + sizeof(u32),
-                (u8ptr)Source + sizeof(u32),
-                Length - sizeof(u32));
+        while (Length){
+            RtlCopyMemory(Instruction, Source, min(sizeof(u32), Length));
+            if (Length < sizeof(u32)){
+                RtlCopyMemory(
+                    Instruction + Length,
+                    (u8ptr)Destination + Length,
+                    sizeof(u32) - Length);
+            }
+            InterlockedExchange(VirtualAddress, *(u32ptr)Instruction);
+            Source += sizeof(u32);
+            VirtualAddress += min(sizeof(u32), Length); 
+            Length -= sizeof(u32);
         }
-
-        InterlockedExchange(VirtualAddress, *(u32ptr)Instruction);
-
-        MmUnmapIoSpace(VirtualAddress, Length);
+        VirtualAddress -= OriginalLength;
+        MmUnmapIoSpace(VirtualAddress, OriginalLength);
     }
 }
 
